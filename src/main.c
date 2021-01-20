@@ -32,6 +32,13 @@ EWRAM_BSS u32 max_multiboot_size;		//largest possible multiboot transfer (init'd
 
 #define TRIM 0x4D495254
 
+#if FLASHCART
+u32 total_rom_size = 0;
+u32 flash_size = 0;
+u32 flash_sram_area = 0;
+u8 flash_type = 0;
+#endif
+
 //82048 is an upper bound on the save state size
 //The formula is an upper bound LZO estimate on worst case compression
 //#define WORSTCASE ((82048)+(82048)/64+16+4+64)
@@ -75,6 +82,7 @@ int main()
 	ewram_canary_2 = 0xDEADBEEF;
 
 	C_entry();
+
 	return 0;
 	/*
 	u32 end_addr=(u32)(&__load_stop_iwram9);
@@ -297,6 +305,48 @@ void C_entry()
 			i++;
 		} while (*(u32*)(q+0x104)==gbx_id);
 		roms=i;
+		
+#if FLASHCART
+		flash_type = get_flash_type();
+		if (flash_type > 0) {
+			total_rom_size=((u32)(q))-0x8000000;
+			// Determine the size of the flash chip by checking for ROM loops,
+			// then set the SRAM storage area 0x40000 bytes before the end.
+			// This is due to different sector sizes of different flash chips,
+			// and should hopefully cover all cases.
+			if (memcmp(AGB_ROM+4, AGB_ROM+4+0x400000, 0x40) == 0) {
+				flash_size = 0x400000;
+			} else if (memcmp(AGB_ROM+4, AGB_ROM+4+0x800000, 0x40) == 0) {
+				flash_size = 0x800000;
+			} else if (memcmp(AGB_ROM+4, AGB_ROM+4+0x1000000, 0x40) == 0) {
+				flash_size = 0x1000000;
+			} else {
+				flash_size = 0x2000000;
+			}
+			flash_sram_area = flash_size - 0x40000;
+			
+			// RIP if the selected storage area is within the Goomba Color ROM...
+			if (total_rom_size > flash_sram_area) {
+				get_ready_to_display_text();
+				cls(3);
+				ui_x=0;
+				move_ui();
+				drawtext(7,"The Goomba Color compilation",0);
+				drawtext(8,"  is too large for saving",0);
+				drawtext(9,"  SRAM data in Flash ROM.",0);
+				drawtext(11,"Please remove some ROMs from",0);
+				drawtext(12,"      the compilation.",0);
+				strmerge(str,"Goomba Color ", VERSION);
+				drawtext(18,str,0);
+				drawtext(19,"by Flubba, Dwedit, Lesserkuma",0);
+				while (1) waitframe();
+			}
+			
+			// Finally, restore the SRAM data and proceed.
+			bytecopy(AGB_SRAM, ((u8*)AGB_ROM+flash_sram_area), AGB_SRAM_SIZE);
+		}
+#endif
+		
 		if(!i)roms=1;					//Stop Goomba from crashing if there are no ROMs
 		
 		if (i == 0)
@@ -305,12 +355,18 @@ void C_entry()
 			cls(3);
 			ui_x=0;
 			move_ui();
-			drawtext(0,"No ROMS found!",0);
-			drawtext(1,"Use Goomba Front",0);
-			drawtext(2,"to build a compilation ROM,",0);
-			drawtext(3,"or use Pogoshell with a",0);
-			drawtext(4,"supported flash cartridge.",0);
-			drawtext(19,"Goomba Color " VERSION,0);
+			drawtext( 1,"   No Game Boy ROMs found.",0);
+			drawtext( 3,"You can build a compilation",0);
+			drawtext( 4,"     using Goomba Front.",0);
+#if FLASHCART
+			drawtext( 9,"This version of Goomba Color",0);
+			drawtext(10,"     supports saving on",0);
+			drawtext(11,"batteryless repro flashcarts.",0);
+			drawtext(13,"    https://git.io/JtmcB",0);
+#endif
+			strmerge(str,"Goomba Color ", VERSION);
+			drawtext(18,str,0);
+			drawtext(19,"by Flubba, Dwedit, Lesserkuma",0);
 			while (1)
 			{
 				waitframe();
@@ -457,6 +513,168 @@ int save_sram_CF(char* sramname)
 	}
 	return 0;
 }
+
+#elif FLASHCART
+// This function will auto-detect three common
+// types of reproduction flash cartridges.
+// Must run in EWRAM because ROM data is
+// not visible to the system while checking.
+__attribute__((section(".ewram"), long_call))
+u32 get_flash_type() {
+	u32 rom_data, data;
+	u16 ie = REG_IE;
+	waitframe();
+	REG_IE = ie & 0xFFFE;
+	
+	rom_data = *(u32 *)AGB_ROM;
+	
+	// Type 1
+	_FLASH_WRITE(0, 0x90);
+	data = *(u32 *)AGB_ROM;
+	_FLASH_WRITE(0, 0xFF);
+	if (rom_data != data) {
+		REG_IE = ie;
+		return 1;
+	}
+	
+	// Type 2
+	_FLASH_WRITE(0xAAA, 0xA9);
+	_FLASH_WRITE(0x555, 0x56);
+	_FLASH_WRITE(0xAAA, 0x90);
+	data = *(u32 *)AGB_ROM;
+	_FLASH_WRITE(0, 0xF0);
+	if (rom_data != data) {
+		REG_IE = ie;
+		return 2;
+	}
+	
+	// Type 3
+	_FLASH_WRITE(0xAAA, 0xAA);
+	_FLASH_WRITE(0x555, 0x55);
+	_FLASH_WRITE(0xAAA, 0x90);
+	data = *(u32 *)AGB_ROM;
+	_FLASH_WRITE(0, 0xF0);
+	if (rom_data != data) {
+		REG_IE = ie;
+		return 3;
+	}
+	
+	REG_IE = ie;
+	return 0;
+}
+
+// This function will issue a flash sector erase
+// operation at the given sector address and then
+// write 64 kilobytes of SRAM data to Flash ROM.
+// Must run in EWRAM because ROM data is
+// not visible to the system while erasing/writing.
+__attribute__((section(".ewram"), long_call))
+void flash_write(u8 flash_type, u32 sa)
+{
+	if (flash_type == 0) return;
+	
+	u16 ie = REG_IE;
+	waitframe();
+	REG_IE = ie & 0xFFFE;
+	
+	if (flash_type == 1) {
+		// Erase flash sector
+		_FLASH_WRITE(sa, 0x60);
+		_FLASH_WRITE(sa, 0xD0);
+		_FLASH_WRITE(sa, 0x20);
+		_FLASH_WRITE(sa, 0xD0);
+		while (1) {
+			__asm("nop");
+			if (*(((u16 *)AGB_ROM)+(sa/2)) == 0x80) {
+				break;
+			}
+		}
+		_FLASH_WRITE(sa, 0xFF);
+		
+		// Write data
+		for (int i=0; i<AGB_SRAM_SIZE; i+=2) {
+			_FLASH_WRITE(sa+i, 0x40);
+			_FLASH_WRITE(sa+i, (*(u8 *)(AGB_SRAM+i+1)) << 8 | (*(u8 *)(AGB_SRAM+i)));
+			while (1) {
+				__asm("nop");
+				if (*(((u16 *)AGB_ROM)+(sa/2)) == 0x80) {
+					break;
+				}
+			}
+		}
+		_FLASH_WRITE(sa, 0xFF);
+	
+	} else if (flash_type == 2) {
+		// Erase flash sector
+		_FLASH_WRITE(0xAAA, 0xA9);
+		_FLASH_WRITE(0x555, 0x56);
+		_FLASH_WRITE(0xAAA, 0x80);
+		_FLASH_WRITE(0xAAA, 0xA9);
+		_FLASH_WRITE(0x555, 0x56);
+		_FLASH_WRITE(sa, 0x30);
+		while (1) {
+			__asm("nop");
+			if (*(((u16 *)AGB_ROM)+(sa/2)) == 0xFFFF) {
+				break;
+			}
+		}
+		_FLASH_WRITE(sa, 0xF0);
+		
+		// Write data
+		for (int i=0; i<AGB_SRAM_SIZE; i+=2) {
+			_FLASH_WRITE(0xAAA, 0xA9);
+			_FLASH_WRITE(0x555, 0x56);
+			_FLASH_WRITE(0xAAA, 0xA0);
+			_FLASH_WRITE(sa+i, (*(u8 *)(AGB_SRAM+i+1)) << 8 | (*(u8 *)(AGB_SRAM+i)));
+			while (1) {
+				__asm("nop");
+				if (*(((u16 *)AGB_ROM)+((sa+i)/2)) == ((*(u8 *)(AGB_SRAM+i+1)) << 8 | (*(u8 *)(AGB_SRAM+i)))) {
+					break;
+				}
+			}
+		}
+		_FLASH_WRITE(sa, 0xF0);
+	
+	} else if (flash_type == 3) {
+		// Erase flash sector
+		_FLASH_WRITE(0xAAA, 0xAA);
+		_FLASH_WRITE(0x555, 0x55);
+		_FLASH_WRITE(0xAAA, 0x80);
+		_FLASH_WRITE(0xAAA, 0xAA);
+		_FLASH_WRITE(0x555, 0x55);
+		_FLASH_WRITE(sa, 0x30);
+		while (1) {
+			__asm("nop");
+			if (*(((u16 *)AGB_ROM)+(sa/2)) == 0xFFFF) {
+				break;
+			}
+		}
+		_FLASH_WRITE(sa, 0xF0);
+		
+		// Write data
+		for (int i=0; i<AGB_SRAM_SIZE; i+=2) {
+			_FLASH_WRITE(0xAAA, 0xAA);
+			_FLASH_WRITE(0x555, 0x55);
+			_FLASH_WRITE(0xAAA, 0xA0);
+			_FLASH_WRITE(sa+i, (*(u8 *)(AGB_SRAM+i+1)) << 8 | (*(u8 *)(AGB_SRAM+i)));
+			while (1) {
+				__asm("nop");
+				if (*(((u16 *)AGB_ROM)+((sa+i)/2)) == ((*(u8 *)(AGB_SRAM+i+1)) << 8 | (*(u8 *)(AGB_SRAM+i)))) {
+					break;
+				}
+			}
+		}
+		_FLASH_WRITE(sa, 0xF0);
+	}
+	
+	REG_IE = ie;
+}
+
+void save_sram_FLASH()
+{
+	if (flash_type == 0) return;
+	flash_write(flash_type, flash_sram_area);
+}
 #endif
 
 void jump_to_rommenu(void)
@@ -491,6 +709,17 @@ void rommenu(void)
 	make_ui_visible();
 #if CARTSRAM
 	backup_gb_sram(0); //includes emergency delete menu
+#endif
+#if FLASHCART
+	if (flash_type == 0) {
+		drawtext( 8+32,"  Flash ROM not detected.",0);
+		drawtext(10+32,"  Batteryless SRAM saving",0);
+		drawtext(11+32,"     will be disabled.",0);
+		for(int i=0;i<150;i++) {	//wait 2.5 seconds
+			waitframe();
+		}
+		cls(3);
+	}
 #endif
 
 #if MOVIEPLAYER

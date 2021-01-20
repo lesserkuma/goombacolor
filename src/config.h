@@ -7,7 +7,7 @@
 #define SRAM_SIZE 64
 #endif
 
-#define VERSION "12-14-14"
+#define VERSION "20210120"
 
 //#define LITTLESOUNDDJ 0
 //Little Sound DJ Hack requires M3/G6/Supercard
@@ -21,10 +21,11 @@
 #define USETRIM 1
 #define MOVIEPLAYER 0
 #define MOVIEPLAYERDEBUG 0
+#define FLASHCART 1
 #define RUMBLE 1
 #define RESIZABLE 0
 #define GOMULTIBOOT 0
-#define POGOSHELL 1
+#define POGOSHELL 0
 #define VISOLY 1
 #define SHANTAE_HACK 1
 #define REDUCED_FONT 1

@@ -184,6 +184,39 @@ void ui()
 		}
 	}
 #endif
+#if FLASHCART
+	if (flash_type > 0) {
+		// Ask user if they want to save SRAM contents to Flash
+		// ROM. Asking the question here hopefully helps that
+		// they don't forget saving before turning off.
+		if(g_cartflags&2 && g_rammask!=0)
+		{
+			ui_x=0;
+			move_ui();
+			cls(3);
+			drawtext( 8,"    Save your progress to",0);
+			drawtext( 9,"       Flash ROM now?",0);
+			drawtext(11,"           (A) Yes",0);
+			drawtext(12,"           (B) No",0);
+			usefade=0;
+			setdarkness(7);
+			while (1) {
+				drawclock();
+				key=getmenuinput(mainmenuitems);
+				main_ui_selection = selected;
+				if (key&(A_BTN)) {
+					cls(3);
+					drawtext(9,"          Saving...",0);
+					drawtext(10,"  Don't turn off the power.",0);
+					save_sram_FLASH();
+					break;
+				} else if (key&(B_BTN)) {
+					break;
+				}
+			}
+		}
+	}
+#endif
 	selected=0;
 	main_ui_selection = selected;
 	drawui1();
@@ -446,7 +479,7 @@ void drawui1()
 	
 	strmerge(str,EMUNAME " " VERSION " on ",hostname[(u32)gbaversion]);
 	drawtext(18,str,0);
-	drawtext(19,"by Flubba and Dwedit",0);
+	drawtext(19,"by Flubba, Dwedit, Lesserkuma",0);
 
 	print_1("B autofire: ",autotxt[autoB]);
 	print_1("A autofire: ",autotxt[autoA]);
@@ -648,6 +681,15 @@ void exit_()
 {
 #if CARTSRAM
 	writeconfig();					//save any changes
+#endif
+#if FLASHCART
+	if (flash_type > 0) {
+		// Save SRAM contents to Flash before exiting/restarting
+		cls(3);
+		drawtext(9,"          Saving...",0);
+		drawtext(10,"  Don't turn off the power.",0);
+		save_sram_FLASH(); // Save SRAM contents to Flash ROM
+	}
 #endif
 	fadetowhite();
 	REG_DISPCNT=FORCE_BLANK;		//screen OFF
