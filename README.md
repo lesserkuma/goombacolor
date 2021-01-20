@@ -1,2 +1,7 @@
-# goombacolor
-Game Boy Color emulator for GBA
+# Goomba Color
+Originally created by Flubba and Dwedit
+
+Source code imported from https://www.dwedit.org/gba/goombacolor.php
+
+## Modifications
+* Batteryless saving for reproduction/bootleg flash cartridges that come with SRAM but without a battery
