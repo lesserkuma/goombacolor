@@ -189,30 +189,27 @@ void ui()
 		// Ask user if they want to save SRAM contents to Flash
 		// ROM. Asking the question here hopefully helps that
 		// they don't forget saving before turning off.
-		if(g_cartflags&2 && g_rammask!=0)
-		{
-			ui_x=0;
-			move_ui();
-			cls(3);
-			drawtext( 8,"    Save your progress to",0);
-			drawtext( 9,"       Flash ROM now?",0);
-			drawtext(11,"           (A) Yes",0);
-			drawtext(12,"           (B) No",0);
-			usefade=0;
-			setdarkness(7);
-			while (1) {
-				drawclock();
-				key=getmenuinput(mainmenuitems);
-				main_ui_selection = selected;
-				if (key&(A_BTN)) {
-					cls(3);
-					drawtext(9,"          Saving...",0);
-					drawtext(10,"  Don't turn off the power.",0);
-					save_sram_FLASH();
-					break;
-				} else if (key&(B_BTN)) {
-					break;
-				}
+		ui_x=0;
+		move_ui();
+		cls(3);
+		drawtext( 8,"    Save your progress to",0);
+		drawtext( 9,"       Flash ROM now?",0);
+		drawtext(11,"           (A) Yes",0);
+		drawtext(12,"           (B) No",0);
+		usefade=0;
+		setdarkness(7);
+		while (1) {
+			drawclock();
+			key=getmenuinput(mainmenuitems);
+			main_ui_selection = selected;
+			if (key&(A_BTN)) {
+				cls(3);
+				drawtext(9,"          Saving...",0);
+				drawtext(10,"  Don't turn off the power.",0);
+				save_sram_FLASH();
+				break;
+			} else if (key&(B_BTN)) {
+				break;
 			}
 		}
 	}

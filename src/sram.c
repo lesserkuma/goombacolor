@@ -758,12 +758,10 @@ void managesram() {
 		i=getmenuinput(menuitems);
 		if(i&SELECT) {
 			updatestates(selected,1,SRAMSAVE);
-			if(selected==menuitems-1) {
-				selected--;	//deleted last entry.. move up one
+			if(selected==menuitems-1) selected--;	//deleted last entry.. move up one
 #if FLASHCART
-				update_flash = 1;
+			update_flash = 1;
 #endif
-			}
 		}
 		if(i&(SELECT+UP+DOWN+LEFT+RIGHT))
 			drawstates(SRAMMENU,&menuitems,&offset,0);
@@ -810,12 +808,10 @@ void deletemenu(int statesize)
 		if(i&SELECT)
 		{
 			updatestates(selected,1,-1);
-			if (selected==menuitems-1) {
-				selected--;
+			if (selected==menuitems-1) selected--;
 #if FLASHCART
-				update_flash = 1;
+			update_flash = 1;
 #endif
-			}
 		}
 		if(i&(SELECT+UP+DOWN+LEFT+RIGHT))
 			drawstates(DELETEMENU,&menuitems,&offset,statesize);
@@ -1431,6 +1427,9 @@ void loadstatemenu() {
 	int offset=0;
 	int menuitems;
 	u32 sum;
+#if FLASHCART
+	u8 update_flash = 0;
+#endif
 	
 	SAVE_FORBIDDEN;
 
@@ -1463,10 +1462,23 @@ void loadstatemenu() {
 		} else if(key&SELECT) {
 			updatestates(selected,1,STATESAVE);
 			if(selected==menuitems-1) selected--;	//deleted last entry? move up one
+#if FLASHCART
+			update_flash = 1;
+#endif
 		}
 		if(key&(SELECT+UP+DOWN+LEFT+RIGHT))
 			sh=drawstates(LOADMENU,&menuitems,&offset,0);
 	} while(menuitems && !(key&(L_BTN+R_BTN+A_BTN+B_BTN)));
+
+#if FLASHCART
+	if (flash_type > 0 && update_flash == 1) {
+		cls(3);
+		drawtext(32+ 9,"          Saving...",0);
+		drawtext(32+10,"  Don't turn off the power.",0);
+		save_sram_FLASH();
+	}
+#endif
+
 	drawui1();
 	scrollr(0);
 }
