@@ -185,6 +185,7 @@ void ui()
 	}
 #endif
 #if FLASHCART
+	backup_gb_sram(1);
 	if (flash_type > 0) {
 		// Ask user if they want to save SRAM contents to Flash
 		// ROM. Asking the question here hopefully helps that
@@ -685,7 +686,9 @@ void exit_()
 		cls(3);
 		drawtext(9,"          Saving...",0);
 		drawtext(10,"  Don't turn off the power.",0);
+		drawtext(19,"Batteryless mod by Lesserkuma",0);
 		save_sram_FLASH(); // Save SRAM contents to Flash ROM
+		cls(3);
 	}
 #endif
 	fadetowhite();

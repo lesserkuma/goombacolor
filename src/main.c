@@ -344,6 +344,25 @@ void C_entry()
 			
 			// Finally, restore the SRAM data and proceed.
 			bytecopy(AGB_SRAM, ((u8*)AGB_ROM+flash_sram_area), AGB_SRAM_SIZE);
+		
+		} else { // Emulator mode?
+			if ((*(u32*)(AGB_ROM+0x400000-0x40000) == STATEID) || (*(u32*)(AGB_ROM+0x400000-0x40000) == STATEID2)) {
+				flash_sram_area = 0x400000-0x40000;
+			} else if ((*(u32*)(AGB_ROM+0x800000-0x40000) == STATEID) || (*(u32*)(AGB_ROM+0x800000-0x40000) == STATEID2)) {
+				flash_sram_area = 0x800000-0x40000;
+			} else if ((*(u32*)(AGB_ROM+0x1000000-0x40000) == STATEID) || (*(u32*)(AGB_ROM+0x1000000-0x40000) == STATEID2)) {
+				flash_sram_area = 0x1000000-0x40000;
+			} else if ((*(u32*)(AGB_ROM+0x2000000-0x40000) == STATEID) || (*(u32*)(AGB_ROM+0x2000000-0x40000) == STATEID2)) {
+				flash_sram_area = 0x2000000-0x40000;
+			}
+			if (flash_sram_area != 0) {
+				bytecopy(AGB_SRAM, ((u8*)AGB_ROM+flash_sram_area), AGB_SRAM_SIZE);
+				bytecopy(AGB_SRAM, ((u8*)AGB_ROM+flash_sram_area), AGB_SRAM_SIZE/2); // some emulators don't like 64 KB of SRAM, so at least give them the first 32 KB again
+			}
+		}
+		// Failsafe: Holding SELECT+UP+B on boot will invalidate SRAM
+		if (((*(u16 *)(0x4000130))) == 0x03B9) {
+			*(u32 *)AGB_SRAM = 0xFFFFFFFF;
 		}
 #endif
 		
@@ -513,31 +532,35 @@ int save_sram_CF(char* sramname)
 	}
 	return 0;
 }
+#endif
 
-#elif FLASHCART
+#if FLASHCART
 // This function will auto-detect three common
 // types of reproduction flash cartridges.
 // Must run in EWRAM because ROM data is
 // not visible to the system while checking.
-__attribute__((section(".ewram"), long_call))
+__attribute__((section(".ewram")))
 u32 get_flash_type() {
 	u32 rom_data, data;
 	u16 ie = REG_IE;
-	waitframe();
+	//stop_dma_interrupts();
 	REG_IE = ie & 0xFFFE;
 	
 	rom_data = *(u32 *)AGB_ROM;
 	
 	// Type 1
+	_FLASH_WRITE(0, 0xFF);
 	_FLASH_WRITE(0, 0x90);
 	data = *(u32 *)AGB_ROM;
 	_FLASH_WRITE(0, 0xFF);
 	if (rom_data != data) {
 		REG_IE = ie;
+		//resume_interrupts();
 		return 1;
 	}
 	
 	// Type 2
+	_FLASH_WRITE(0, 0xF0);
 	_FLASH_WRITE(0xAAA, 0xA9);
 	_FLASH_WRITE(0x555, 0x56);
 	_FLASH_WRITE(0xAAA, 0x90);
@@ -545,10 +568,12 @@ u32 get_flash_type() {
 	_FLASH_WRITE(0, 0xF0);
 	if (rom_data != data) {
 		REG_IE = ie;
+		//resume_interrupts();
 		return 2;
 	}
 	
 	// Type 3
+	_FLASH_WRITE(0, 0xF0);
 	_FLASH_WRITE(0xAAA, 0xAA);
 	_FLASH_WRITE(0x555, 0x55);
 	_FLASH_WRITE(0xAAA, 0x90);
@@ -556,10 +581,12 @@ u32 get_flash_type() {
 	_FLASH_WRITE(0, 0xF0);
 	if (rom_data != data) {
 		REG_IE = ie;
+		//resume_interrupts();
 		return 3;
 	}
 	
 	REG_IE = ie;
+	//resume_interrupts();
 	return 0;
 }
 
@@ -568,17 +595,17 @@ u32 get_flash_type() {
 // write 64 kilobytes of SRAM data to Flash ROM.
 // Must run in EWRAM because ROM data is
 // not visible to the system while erasing/writing.
-__attribute__((section(".ewram"), long_call))
+__attribute__((section(".ewram")))
 void flash_write(u8 flash_type, u32 sa)
 {
 	if (flash_type == 0) return;
-	
 	u16 ie = REG_IE;
-	waitframe();
+	//stop_dma_interrupts();
 	REG_IE = ie & 0xFFFE;
 	
 	if (flash_type == 1) {
 		// Erase flash sector
+		_FLASH_WRITE(sa, 0xFF);
 		_FLASH_WRITE(sa, 0x60);
 		_FLASH_WRITE(sa, 0xD0);
 		_FLASH_WRITE(sa, 0x20);
@@ -606,6 +633,7 @@ void flash_write(u8 flash_type, u32 sa)
 	
 	} else if (flash_type == 2) {
 		// Erase flash sector
+		_FLASH_WRITE(sa, 0xF0);
 		_FLASH_WRITE(0xAAA, 0xA9);
 		_FLASH_WRITE(0x555, 0x56);
 		_FLASH_WRITE(0xAAA, 0x80);
@@ -637,6 +665,7 @@ void flash_write(u8 flash_type, u32 sa)
 	
 	} else if (flash_type == 3) {
 		// Erase flash sector
+		_FLASH_WRITE(sa, 0xF0);
 		_FLASH_WRITE(0xAAA, 0xAA);
 		_FLASH_WRITE(0x555, 0x55);
 		_FLASH_WRITE(0xAAA, 0x80);
@@ -668,6 +697,7 @@ void flash_write(u8 flash_type, u32 sa)
 	}
 	
 	REG_IE = ie;
+	//resume_interrupts();
 }
 
 void save_sram_FLASH()
@@ -715,6 +745,7 @@ void rommenu(void)
 		drawtext( 8+32,"  Flash ROM not detected.",0);
 		drawtext(10+32,"  Batteryless SRAM saving",0);
 		drawtext(11+32,"     will be disabled.",0);
+		drawtext(19+32,"Batteryless mod by Lesserkuma",0);
 		for(int i=0;i<150;i++) {	//wait 2.5 seconds
 			waitframe();
 		}

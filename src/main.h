@@ -21,6 +21,9 @@ extern int rom_filesize;
 	#define AGB_SRAM_SIZE SRAM_SIZE*1024
 	#define _FLASH_WRITE(pa, pd) { *(((u16 *)AGB_ROM)+((pa)/2)) = pd; __asm("nop"); }
 	extern u8 flash_type;
+	extern u32 get_flash_type();
+	void flash_write(u8 flash_type, u32 sa);
+	void save_sram_FLASH();
 #endif
 
 extern u32 max_multiboot_size;
@@ -49,11 +52,6 @@ void splash(const u16* splashImage);
 #if MOVIEPLAYER
 int get_saved_sram_CF(char* sramname);
 int save_sram_CF(char* sramname);
-#endif
-#if FLASHCART
-u32 get_flash_type();
-void flash_write(u8 flash_type, u32 sa);
-void save_sram_FLASH();
 #endif
 void jump_to_rommenu(void) NORETURN;
 void rommenu(void);

@@ -36,9 +36,6 @@ EWRAM_DATA u32 save_start = SAVE_START;
 
 
 
-#define STATEID 0x57a731d8
-#define STATEID2 0x57a731d9
-
 #define STATESAVE 0
 #define SRAMSAVE 1
 #define CONFIGSAVE 2
@@ -1044,6 +1041,7 @@ void quicksave() {
 	}
 
 #if FLASHCART
+	backup_gb_sram(1);
 	if (flash_type > 0 && update_flash == 1) {
 		save_sram_FLASH();
 	}

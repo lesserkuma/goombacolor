@@ -12,4 +12,6 @@ The Flash ROM is updated in the following instances:
 - Deleting a Save State or SRAM
 - Exiting
 
-The batteryless Goomba Color SRAM storage area in Flash ROM is dynamically determined and depends on the maximum ROM size of the flash cartridge. In case you need to extract it into a `.sav` file, you will find the data at ROM address `flash_size - 0x40000` and the length is 0x20000 bytes.
+The batteryless Goomba Color SRAM storage area in Flash ROM is dynamically determined and depends on the maximum ROM size of the flash cartridge. In case you need to extract/inject/edit something, you will find the data at ROM address `flash_size - 0x40000` and the length is 0x20000 bytes. Emulators should also be able to extract the SRAM data into a `.sav` file from a re-dumped compilation.
+
+Holding SELECT+UP+B on startup will wipe the save data in case something is not working right.
