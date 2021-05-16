@@ -308,8 +308,15 @@ void C_entry()
 		
 #if FLASHCART
 		flash_type = get_flash_type();
+		total_rom_size=((u32)(q))-0x8000000;
+		flash_sram_area = 0;
+		
+		// Override SRAM flash locationif ROM is appended with "SVLC" followed by the address to use
+		if (*(u32 *)(AGB_ROM+total_rom_size) == 0x434C5653) {
+			flash_sram_area = *(u32 *)(AGB_ROM+total_rom_size+4);
+		}
+		
 		if (flash_type > 0) {
-			total_rom_size=((u32)(q))-0x8000000;
 			// Determine the size of the flash chip by checking for ROM loops,
 			// then set the SRAM storage area 0x40000 bytes before the end.
 			// This is due to different sector sizes of different flash chips,
@@ -323,7 +330,9 @@ void C_entry()
 			} else {
 				flash_size = 0x2000000;
 			}
-			flash_sram_area = flash_size - 0x40000;
+			if (flash_sram_area == 0) {
+				flash_sram_area = flash_size - 0x40000;
+			}
 			
 			// RIP if the selected storage area is within the Goomba Color ROM...
 			if (total_rom_size > flash_sram_area) {
@@ -346,14 +355,16 @@ void C_entry()
 			bytecopy(AGB_SRAM, ((u8*)AGB_ROM+flash_sram_area), AGB_SRAM_SIZE);
 		
 		} else { // Emulator mode?
-			if ((*(u32*)(AGB_ROM+0x400000-0x40000) == STATEID) || (*(u32*)(AGB_ROM+0x400000-0x40000) == STATEID2)) {
-				flash_sram_area = 0x400000-0x40000;
-			} else if ((*(u32*)(AGB_ROM+0x800000-0x40000) == STATEID) || (*(u32*)(AGB_ROM+0x800000-0x40000) == STATEID2)) {
-				flash_sram_area = 0x800000-0x40000;
-			} else if ((*(u32*)(AGB_ROM+0x1000000-0x40000) == STATEID) || (*(u32*)(AGB_ROM+0x1000000-0x40000) == STATEID2)) {
-				flash_sram_area = 0x1000000-0x40000;
-			} else if ((*(u32*)(AGB_ROM+0x2000000-0x40000) == STATEID) || (*(u32*)(AGB_ROM+0x2000000-0x40000) == STATEID2)) {
-				flash_sram_area = 0x2000000-0x40000;
+			if (flash_sram_area == 0) {
+				if ((*(u32*)(AGB_ROM+0x400000-0x40000) == STATEID) || (*(u32*)(AGB_ROM+0x400000-0x40000) == STATEID2)) {
+					flash_sram_area = 0x400000-0x40000;
+				} else if ((*(u32*)(AGB_ROM+0x800000-0x40000) == STATEID) || (*(u32*)(AGB_ROM+0x800000-0x40000) == STATEID2)) {
+					flash_sram_area = 0x800000-0x40000;
+				} else if ((*(u32*)(AGB_ROM+0x1000000-0x40000) == STATEID) || (*(u32*)(AGB_ROM+0x1000000-0x40000) == STATEID2)) {
+					flash_sram_area = 0x1000000-0x40000;
+				} else if ((*(u32*)(AGB_ROM+0x2000000-0x40000) == STATEID) || (*(u32*)(AGB_ROM+0x2000000-0x40000) == STATEID2)) {
+					flash_sram_area = 0x2000000-0x40000;
+				}
 			}
 			if (flash_sram_area != 0) {
 				bytecopy(AGB_SRAM, ((u8*)AGB_ROM+flash_sram_area), AGB_SRAM_SIZE);
@@ -548,12 +559,23 @@ u32 get_flash_type() {
 	
 	rom_data = *(u32 *)AGB_ROM;
 	
-	// Type 1
+	// Type 1 or 4
 	_FLASH_WRITE(0, 0xFF);
 	_FLASH_WRITE(0, 0x90);
 	data = *(u32 *)AGB_ROM;
 	_FLASH_WRITE(0, 0xFF);
 	if (rom_data != data) {
+		// Check if the chip is responding to this command
+		// which then needs a different write command later
+		_FLASH_WRITE(0x59, 0x42);
+		data = *(u8 *)(AGB_ROM+0xB2);
+		_FLASH_WRITE(0x59, 0x96);
+		_FLASH_WRITE(0, 0xFF);
+		if (data != 0x96) {
+			REG_IE = ie;
+			//resume_interrupts();
+			return 4;
+		}
 		REG_IE = ie;
 		//resume_interrupts();
 		return 1;
@@ -694,6 +716,46 @@ void flash_write(u8 flash_type, u32 sa)
 			}
 		}
 		_FLASH_WRITE(sa, 0xF0);
+
+	} else if (flash_type == 4) {
+		// Erase flash sector
+		_FLASH_WRITE(sa, 0xFF);
+		_FLASH_WRITE(sa, 0x60);
+		_FLASH_WRITE(sa, 0xD0);
+		_FLASH_WRITE(sa, 0x20);
+		_FLASH_WRITE(sa, 0xD0);
+		while (1) {
+			__asm("nop");
+			if ((*(((u16 *)AGB_ROM)+(sa/2)) & 0x80) == 0x80) {
+				break;
+			}
+		}
+		_FLASH_WRITE(sa, 0xFF);
+		
+		// Write data
+		int c = 0;
+		while (c < AGB_SRAM_SIZE) {
+			_FLASH_WRITE(sa+c, 0xEA);
+			while (1) {
+				__asm("nop");
+				if ((*(((u16 *)AGB_ROM)+((sa+c)/2)) & 0x80) == 0x80) {
+					break;
+				}
+			}
+			_FLASH_WRITE(sa+c, 0x1FF);
+			for (int i=0; i<1024; i+=2) {
+				_FLASH_WRITE(sa+c+i, (*(u8 *)(AGB_SRAM+c+i+1)) << 8 | (*(u8 *)(AGB_SRAM+c+i)));
+			}
+			_FLASH_WRITE(sa+c, 0xD0);
+			while (1) {
+				__asm("nop");
+				if ((*(((u16 *)AGB_ROM)+((sa+c)/2)) & 0x80) == 0x80) {
+					break;
+				}
+			}
+			_FLASH_WRITE(sa+c, 0xFF);
+			c += 1024;
+		}
 	}
 	
 	REG_IE = ie;
