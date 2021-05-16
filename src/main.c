@@ -546,7 +546,7 @@ int save_sram_CF(char* sramname)
 #endif
 
 #if FLASHCART
-// This function will auto-detect three common
+// This function will auto-detect four common
 // types of reproduction flash cartridges.
 // Must run in EWRAM because ROM data is
 // not visible to the system while checking.
